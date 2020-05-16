@@ -124,7 +124,7 @@ sctk-$(SCTK_VERSION).tar.bz2:
 	if [ -d "$(DOWNLOAD_DIR)" ]; then \
 		cp -p "$(DOWNLOAD_DIR)/sctk-$(SCTK_VERSION).tar.bz2" .; \
 	else \
-		$(WGET) -T 10 https://www.openslr.org/resources/4/sctk-$(SCTK_VERSION).tar.bz2; \
+		$(WGET) -T 10 http://192.168.239.129/sctk-$(SCTK_VERSION).tar.bz2; \
 	fi
 
 sph2pipe: sph2pipe_compiled
@@ -142,7 +142,7 @@ sph2pipe_$(SPH2PIPE_VERSION).tar.gz:
 	if [ -d "$(DOWNLOAD_DIR)" ]; then \
 		cp -p "$(DOWNLOAD_DIR)/sph2pipe_$(SPH2PIPE_VERSION).tar.gz" .; \
 	else \
-		$(WGET) -T 10 -t 3 https://www.openslr.org/resources/3/sph2pipe_$(SPH2PIPE_VERSION).tar.gz || \
+		$(WGET) -T 10 -t 3 http://192.168.239.129/sph2pipe_$(SPH2PIPE_VERSION).tar.gz || \
 		$(WGET) -T 10 -c https://sourceforge.net/projects/kaldi/files/sph2pipe_$(SPH2PIPE_VERSION).tar.gz; \
 	fi
 
