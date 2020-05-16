@@ -78,7 +78,7 @@ struct CuAllocatorOptions {
 
   void Check() {
     // don't let it get too close to 1;
-    KALDI_ASSERT(memory_proportion >= 0.05 && memory_proportion < 0.99);
+    KALDI_ASSERT(memory_proportion >= 0.005 && memory_proportion < 0.99);
   }
 };
 

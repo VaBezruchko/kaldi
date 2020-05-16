@@ -25,6 +25,7 @@
 #include "nnet3/nnet-am-decodable-simple.h"
 #include "base/timer.h"
 #include "nnet3/nnet-utils.h"
+#include "cudamatrix/cu-allocator.h"
 
 namespace kaldi {
 namespace nnet3 {
@@ -118,6 +119,7 @@ int main(int argc, char *argv[]) {
       "If set, read the cached compiler from the specified file path.");
     po.Register("cached-compiler-out", &cached_compiler_out,
       "If set, write the cached compiler to the specified file path.");
+    RegisterCuAllocatorOptions(&po);
 
 #if HAVE_CUDA==1
     CuDevice::RegisterDeviceOptions(&po);
