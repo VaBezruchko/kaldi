@@ -22,6 +22,8 @@
 #include "feat/wave-reader.h"
 #include "cudamatrix/cu-matrix.h"
 #include "cudamatrix/cu-vector.h"
+#include "cudamatrix/cu-allocator.h"
+
 int main(int argc, char *argv[]) {
   try {
     using namespace kaldi;
@@ -59,6 +61,9 @@ int main(int argc, char *argv[]) {
                 "0 -> left, 1 -> right)");
     po.Register("min-duration", &min_duration, "Minimum duration of segments "
                 "to process (in seconds).");
+    RegisterCuAllocatorOptions(&po);
+
+    CuDevice::RegisterDeviceOptions(&po);
 
     po.Read(argc, argv);
 
