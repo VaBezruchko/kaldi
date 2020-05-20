@@ -200,7 +200,6 @@ endif()
 if(CUDA_FOUND)
     add_subdirectory(src/cudafeat)
     add_subdirectory(src/cudadecoder)
-    add_subdirectory(src/cudaxvectorbin-s)
 endif()
 
 # add all native executables
@@ -225,6 +224,7 @@ add_subdirectory(src/kwsbin)
 if(CUDA_FOUND)
     add_subdirectory(src/cudafeatbin)
     add_subdirectory(src/cudadecoderbin)
+    add_subdirectory(src/cudaxvectorbin-s)
 endif()
 
 include(CMakePackageConfigHelpers)
