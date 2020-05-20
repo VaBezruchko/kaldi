@@ -1,6 +1,5 @@
-
-FROM debian:9.8
-LABEL maintainer="va.bezruchko@gmail.com"
+FROM nvidia/cuda:10.2-cudnn7-devel-ubuntu16.04
+LABEL maintainer="mdoulaty@gmail.com"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -18,27 +17,24 @@ RUN apt-get update && \
         python2.7 \
         python3 \
         zlib1g-dev \
-        ca-certificates \
         gfortran \
+        ca-certificates \
         patch \
         ffmpeg \
-	vim && \
+    vim && \
     rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/bin/python2.7 /usr/bin/python 
 
 ADD ./ /opt/kaldi
 
-RUN    cd /opt/kaldi && \
+RUN cd /opt/kaldi && \
     cd /opt/kaldi/tools && \
     ./extras/install_mkl.sh && \
     make -j $(nproc) && \
     cd /opt/kaldi/src && \
     ./configure --shared --use-cuda && \
     make depend -j $(nproc) && \
-    make -j $(nproc) && \
-    cd cudaxvectorbin-s && \
     make -j $(nproc)
 
 WORKDIR /opt/kaldi/
-
