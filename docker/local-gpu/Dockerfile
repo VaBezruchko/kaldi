@@ -36,6 +36,8 @@ RUN    cd /opt/kaldi && \
     cd /opt/kaldi/src && \
     ./configure --shared --use-cuda && \
     make depend -j $(nproc) && \
+    make -j $(nproc) && \
+    cd cudaxvectorbin-s && \
     make -j $(nproc)
 
 WORKDIR /opt/kaldi/
