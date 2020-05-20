@@ -200,6 +200,7 @@ endif()
 if(CUDA_FOUND)
     add_subdirectory(src/cudafeat)
     add_subdirectory(src/cudadecoder)
+    add_subdirectory(src/cudaxvectorbin-s)
 endif()
 
 # add all native executables
