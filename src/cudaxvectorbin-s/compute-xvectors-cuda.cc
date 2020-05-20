@@ -263,9 +263,13 @@ int main(int argc, char *argv[]) {
 			exit(1);
 		}
 
+		std::string nnet_rxfilename = po.GetArg(1);
+		std::string wav_rspecifier = po.GetArg(2);
+		std::string vector_wspecifier = po.GetArg(3);
+
+
 		//------------------------  NNET3 options cache
 
-		std::string nnet_rxfilename = po.GetArg(1);
 		ReadKaldiObject(nnet_rxfilename, &nnet);
 		SetBatchnormTestMode(true, &nnet);
 		SetDropoutTestMode(true, &nnet);
@@ -286,8 +290,7 @@ int main(int argc, char *argv[]) {
 		CuDevice::Instantiate().SelectGpuId("yes");
 		CuDevice::Instantiate().AllowMultithreading();
 
-		std::string wav_rspecifier = po.GetArg(2);
-		std::string vector_wspecifier = po.GetArg(3);
+
 
 		CudaSpectralFeatures mfcc(mfcc_opts);
 
