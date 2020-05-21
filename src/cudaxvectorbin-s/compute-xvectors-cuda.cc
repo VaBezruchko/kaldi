@@ -146,9 +146,9 @@ bool Nnet3XvectorCompute(const Matrix<BaseFloat> &features, std::string &utt,
 				<< utt;
 		return false;
 	} else if (num_rows < chunk_size) {
-		KALDI_LOG << "Chunk size of " << chunk_size << " is greater than "
-				<< "the number of rows in utterance: " << utt
-				<< ", using chunk size  of " << num_rows;
+//		KALDI_LOG << "Chunk size of " << chunk_size << " is greater than "
+//				<< "the number of rows in utterance: " << utt
+//				<< ", using chunk size  of " << num_rows;
 		this_chunk_size = num_rows;
 	} else if (chunk_size == -1) {
 		this_chunk_size = num_rows;
@@ -263,6 +263,10 @@ int main(int argc, char *argv[]) {
 			exit(1);
 		}
 
+		CuDevice::Instantiate().SelectGpuId("yes");
+		CuDevice::Instantiate().AllowMultithreading();
+
+
 		std::string nnet_rxfilename = po.GetArg(1);
 		std::string wav_rspecifier = po.GetArg(2);
 		std::string vector_wspecifier = po.GetArg(3);
@@ -286,11 +290,6 @@ int main(int argc, char *argv[]) {
 		}
 
 		//-----------------------
-
-		CuDevice::Instantiate().SelectGpuId("yes");
-		CuDevice::Instantiate().AllowMultithreading();
-
-
 
 		CudaSpectralFeatures mfcc(mfcc_opts);
 
@@ -335,7 +334,7 @@ int main(int argc, char *argv[]) {
 			for (int32 i = 0; i < features.NumRows(); i++) {
 				if (vad_result(i) != 0.0) {
 					KALDI_ASSERT(vad_result(i) == 1.0); // should be zero or one.
-					voiced_features.Row(index).CopyFromVec(features.Row(i));
+					voiced_features.Row(index).CopyFromVec(cmvn_feat.Row(i));
 					index++;
 				}
 			}
@@ -354,7 +353,7 @@ int main(int argc, char *argv[]) {
 
 			vector_writer.Write(utt, xvector);
 
-			if (num_utts % 10 == 0) {
+			if (num_utts % 100 == 0) {
 				KALDI_LOG << "Processed " << num_utts << " utterances";
 			}
 			KALDI_VLOG(2) << "Processed features for key " << utt;
