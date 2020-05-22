@@ -128,7 +128,7 @@ static void RunNnetComputation(const MatrixBase<BaseFloat> &features,
 	xvector->CopyFromVec(cu_output.Row(0));
 }
 
-bool Nnet3XvectorCompute(const Matrix<BaseFloat> &features, std::string &utt,
+bool Nnet3XvectorCompute(const MatrixBase<BaseFloat> &features, std::string &utt,
 		Vector<BaseFloat> *xvector_avg, const Nnet &nnet, int32 chunk_size,
 		int32 min_chunk_size, bool pad_input,
 		CachingOptimizingCompiler *compiler) {
@@ -313,6 +313,8 @@ int main(int argc, char *argv[]) {
 				num_fail++;
 				continue;
 			}
+
+
 			//VAD
 			Vector<BaseFloat> vad_result(features.NumRows());
 			ComputeVadEnergy(vad_opts, features, &vad_result);
@@ -329,6 +331,9 @@ int main(int argc, char *argv[]) {
 					dim++;
 				}
 			}
+
+
+
 			Matrix<BaseFloat> voiced_features(dim, features.NumCols());
 			int32 index = 0;
 			for (int32 i = 0; i < features.NumRows(); i++) {
@@ -340,11 +345,21 @@ int main(int argc, char *argv[]) {
 			}
 			KALDI_ASSERT(index == dim);
 
+
+			//remove tail over chunk_size for solve performance penalty
+			MatrixBase<BaseFloat> *norm_features = &voiced_features;
+			if (chunk_size != -1 && voiced_features.NumRows() > chunk_size) {
+				int32 blns = voiced_features.NumRows() % chunk_size;
+				if (blns != 0) {
+					SubMatrix<BaseFloat> sub_features(voiced_features,
+									0, voiced_features.NumRows() - blns, 0, features.NumCols());
+					norm_features = &sub_features;
+				}
+			}
+
 			//xvector compute
-
 			Vector<BaseFloat> xvector(xvector_dim, kSetZero);
-
-			if (Nnet3XvectorCompute(voiced_features, utt, &xvector, nnet,
+			if (Nnet3XvectorCompute(*norm_features, utt, &xvector, nnet,
 					chunk_size, min_chunk_size, pad_input, &compiler)
 					== false) {
 				num_fail++;
