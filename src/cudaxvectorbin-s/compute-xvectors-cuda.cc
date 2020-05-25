@@ -214,9 +214,13 @@ int main(int argc, char *argv[]) {
 		Timer timer;
 
 		bool only_first_chunk = false;
+		int32 norm_factor_frames = 200;//200 frames = 1 second
 
 		po.Register("only-first-chunk", &only_first_chunk,
 				"Reduce length to the first chunk.");
+
+		po.Register("norm-factor-frames", &norm_factor_frames,
+						"Round length to the frames.");
 
 		//------------------------  MFCC options
 		MfccOptions mfcc_opts;
@@ -308,8 +312,6 @@ int main(int argc, char *argv[]) {
 		int64 frame_count = 0;
 		int32 xvector_dim = nnet.OutputDim("output");
 
-		std::vector<MatrixBase<BaseFloat>*> features_arr;
-
 		for (; !reader.Done(); reader.Next()) {
 			num_utts++;
 
@@ -341,58 +343,50 @@ int main(int argc, char *argv[]) {
 				}
 			}
 
-			Matrix<BaseFloat> *voiced_features = new Matrix<BaseFloat>(dim,
-					features.NumCols());
+			Matrix<BaseFloat> voiced_features(dim, features.NumCols());
 			int32 index = 0;
 			for (int32 i = 0; i < features.NumRows(); i++) {
 				if (vad_result(i) != 0.0) {
 					KALDI_ASSERT(vad_result(i) == 1.0); // should be zero or one.
-					voiced_features->Row(index).CopyFromVec(cmvn_feat.Row(i));
+					voiced_features.Row(index).CopyFromVec(cmvn_feat.Row(i));
 					index++;
 				}
 			}
 			KALDI_ASSERT(index == dim);
 
 			//remove tail over chunk_size for solve performance penalty
-			MatrixBase<BaseFloat> *norm_features = voiced_features;
 
-			int32 balanced_rows = voiced_features->NumRows();
+			int32 balanced_rows = voiced_features.NumRows();
 
-			if (chunk_size != -1 && voiced_features->NumRows() > chunk_size) {
+			if (chunk_size != -1 && voiced_features.NumRows() > chunk_size) {
 				if (only_first_chunk) {
 					balanced_rows = chunk_size;
 				}
 				else {
-					int32 blns = voiced_features->NumRows() % chunk_size;
-					balanced_rows = voiced_features->NumRows() - blns;
+					int32 blns = voiced_features.NumRows() % chunk_size;
+					balanced_rows = voiced_features.NumRows() - blns;
 				}
-			} else {
-				int32 blns = voiced_features->NumRows() % 200;
-				balanced_rows = voiced_features->NumRows() - blns;
+			} else if (voiced_features.NumRows() > norm_factor_frames) {
+				int32 blns = voiced_features.NumRows() % norm_factor_frames;
+				balanced_rows = voiced_features.NumRows() - blns;
 			}
 
-			if (balanced_rows != voiced_features->NumRows()) {
-				SubMatrix<BaseFloat> *sub_features = new SubMatrix<BaseFloat>(
-						*voiced_features, 0, balanced_rows,
-						0, features.NumCols());
-				norm_features = sub_features;
+
+			SubMatrix<BaseFloat> norm_features(
+					voiced_features, 0, balanced_rows,
+					0, features.NumCols());
+
+
+			//xvector compute
+			Vector<BaseFloat> xvector(xvector_dim, kSetZero);
+			if (Nnet3XvectorCompute(norm_features, utt, &xvector, nnet,
+					chunk_size, min_chunk_size, pad_input, &compiler)
+					== false) {
+				num_fail++;
+				continue;
 			}
 
-			features_arr.push_back(norm_features);
-			KALDI_LOG << "STAT: " << utt << "; duration: "
-					<< wave_data.Duration() << "; feats: " << features.NumRows()
-					<< "; voice_feats: " << voiced_features->NumRows();
-
-//			//xvector compute
-//			Vector<BaseFloat> xvector(xvector_dim, kSetZero);
-//			if (Nnet3XvectorCompute(*norm_features, utt, &xvector, nnet,
-//					chunk_size, min_chunk_size, pad_input, &compiler)
-//					== false) {
-//				num_fail++;
-//				continue;
-//			}
-//
-//			vector_writer.Write(utt, xvector);
+			vector_writer.Write(utt, xvector);
 
 			if (num_utts % 100 == 0) {
 				KALDI_LOG << "Processed " << num_utts << " utterances";
@@ -405,21 +399,6 @@ int main(int argc, char *argv[]) {
 		double elapsed1 = timer.Elapsed();
 		KALDI_LOG << "Time taken " << elapsed1 << "s: total frames "
 				<< frame_count;
-
-		for (const MatrixBase<BaseFloat> *norm_features : features_arr) {
-			std::string utt = "asd123";
-
-			//xvector compute
-			Vector<BaseFloat> xvector(xvector_dim, kSetZero);
-			if (Nnet3XvectorCompute(*norm_features, utt, &xvector, nnet,
-					chunk_size, min_chunk_size, pad_input, &compiler)
-					== false) {
-				num_fail++;
-				continue;
-			}
-
-			//vector_writer.Write(utt, xvector);
-		}
 
 		CuDevice::Instantiate().PrintProfile();
 
