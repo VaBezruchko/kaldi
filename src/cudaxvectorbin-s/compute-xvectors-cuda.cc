@@ -114,23 +114,28 @@ static void RunNnetComputation(const MatrixBase<BaseFloat> &features,
 	output_spec.indexes.resize(1);
 	request.outputs.resize(1);
 	request.outputs[0].Swap(&output_spec);
+
 	std::shared_ptr<const NnetComputation> computation(
 			compiler->Compile(request));
+
 	Nnet *nnet_to_update = NULL;  // we're not doing any update.
 	NnetComputer computer(NnetComputeOptions(), *computation, nnet,
 			nnet_to_update);
+
 	CuMatrix<BaseFloat> input_feats_cu(features);
 	computer.AcceptInput("input", &input_feats_cu);
+
 	computer.Run();
+
 	CuMatrix<BaseFloat> cu_output;
 	computer.GetOutputDestructive("output", &cu_output);
 	xvector->Resize(cu_output.NumCols());
 	xvector->CopyFromVec(cu_output.Row(0));
 }
 
-bool Nnet3XvectorCompute(const MatrixBase<BaseFloat> &features, std::string &utt,
-		Vector<BaseFloat> *xvector_avg, const Nnet &nnet, int32 chunk_size,
-		int32 min_chunk_size, bool pad_input,
+bool Nnet3XvectorCompute(const MatrixBase<BaseFloat> &features,
+		std::string &utt, Vector<BaseFloat> *xvector_avg, const Nnet &nnet,
+		int32 chunk_size, int32 min_chunk_size, bool pad_input,
 		CachingOptimizingCompiler *compiler) {
 
 	if (features.NumRows() == 0) {
@@ -208,6 +213,15 @@ int main(int argc, char *argv[]) {
 		ParseOptions po(usage);
 		Timer timer;
 
+		bool only_first_chunk = false;
+		int32 norm_factor_frames = 200;//200 frames = 1 second
+
+		po.Register("only-first-chunk", &only_first_chunk,
+				"Reduce length to the first chunk.");
+
+		po.Register("norm-factor-frames", &norm_factor_frames,
+						"Round length to the frames.");
+
 		//------------------------  MFCC options
 		MfccOptions mfcc_opts;
 
@@ -266,11 +280,9 @@ int main(int argc, char *argv[]) {
 		CuDevice::Instantiate().SelectGpuId("yes");
 		CuDevice::Instantiate().AllowMultithreading();
 
-
 		std::string nnet_rxfilename = po.GetArg(1);
 		std::string wav_rspecifier = po.GetArg(2);
 		std::string vector_wspecifier = po.GetArg(3);
-
 
 		//------------------------  NNET3 options cache
 
@@ -314,7 +326,6 @@ int main(int argc, char *argv[]) {
 				continue;
 			}
 
-
 			//VAD
 			Vector<BaseFloat> vad_result(features.NumRows());
 			ComputeVadEnergy(vad_opts, features, &vad_result);
@@ -332,8 +343,6 @@ int main(int argc, char *argv[]) {
 				}
 			}
 
-
-
 			Matrix<BaseFloat> voiced_features(dim, features.NumCols());
 			int32 index = 0;
 			for (int32 i = 0; i < features.NumRows(); i++) {
@@ -345,21 +354,32 @@ int main(int argc, char *argv[]) {
 			}
 			KALDI_ASSERT(index == dim);
 
-
 			//remove tail over chunk_size for solve performance penalty
-			MatrixBase<BaseFloat> *norm_features = &voiced_features;
+
+			int32 balanced_rows = voiced_features.NumRows();
+
 			if (chunk_size != -1 && voiced_features.NumRows() > chunk_size) {
-				int32 blns = voiced_features.NumRows() % chunk_size;
-				if (blns != 0) {
-					SubMatrix<BaseFloat> sub_features(voiced_features,
-									0, voiced_features.NumRows() - blns, 0, features.NumCols());
-					norm_features = &sub_features;
+				if (only_first_chunk) {
+					balanced_rows = chunk_size;
 				}
+				else {
+					int32 blns = voiced_features.NumRows() % chunk_size;
+					balanced_rows = voiced_features.NumRows() - blns;
+				}
+			} else if (voiced_features.NumRows() > norm_factor_frames) {
+				int32 blns = voiced_features.NumRows() % norm_factor_frames;
+				balanced_rows = voiced_features.NumRows() - blns;
 			}
+
+
+			SubMatrix<BaseFloat> norm_features(
+					voiced_features, 0, balanced_rows,
+					0, features.NumCols());
+
 
 			//xvector compute
 			Vector<BaseFloat> xvector(xvector_dim, kSetZero);
-			if (Nnet3XvectorCompute(*norm_features, utt, &xvector, nnet,
+			if (Nnet3XvectorCompute(norm_features, utt, &xvector, nnet,
 					chunk_size, min_chunk_size, pad_input, &compiler)
 					== false) {
 				num_fail++;
@@ -376,12 +396,16 @@ int main(int argc, char *argv[]) {
 			num_success++;
 		}
 
+		double elapsed1 = timer.Elapsed();
+		KALDI_LOG << "Time taken " << elapsed1 << "s: total frames "
+				<< frame_count;
+
 		CuDevice::Instantiate().PrintProfile();
 
-		double elapsed = timer.Elapsed();
-		KALDI_LOG << "Time taken " << elapsed
+		double elapsed2 = timer.Elapsed();
+		KALDI_LOG << "Time taken " << elapsed2
 				<< "s: real-time factor assuming 100 frames/sec is "
-				<< (elapsed * 100.0 / frame_count);
+				<< (elapsed2 * 100.0 / frame_count);
 		KALDI_LOG << "Done " << num_success << " utterances, failed for "
 				<< num_fail;
 
