@@ -35,9 +35,8 @@
 using namespace kaldi;
 using namespace kaldi::nnet3;
 
-bool ComputeMFCC(WaveData *wave_data, BaseFloat min_duration, int32 channel,
-		CudaSpectralFeatures &mfcc, Matrix<BaseFloat> *features,
-		std::string &utt) {
+bool ComputeMfccCuda(WaveData *wave_data, BaseFloat min_duration, int32 channel,
+		CudaSpectralFeatures &mfcc, Matrix<BaseFloat> *features, std::string &utt) {
 
 	if (wave_data->Duration() < min_duration) {
 		KALDI_WARN << "File: " << utt << " is too short ("
@@ -70,9 +69,40 @@ bool ComputeMFCC(WaveData *wave_data, BaseFloat min_duration, int32 channel,
 	mfcc.ComputeFeatures(cu_waveform, wave_data->SampFreq(), 1.0, &cu_features);
 	features->Resize(cu_features.NumRows(), cu_features.NumCols());
 	features->CopyFromMat(cu_features);
+	return true;
+}
+
+bool ComputeMfccCPU(WaveData *wave_data, BaseFloat min_duration, int32 channel,
+		Mfcc &mfcc, Matrix<BaseFloat> *features, std::string &utt) {
+
+	if (wave_data->Duration() < min_duration) {
+		KALDI_WARN << "File: " << utt << " is too short ("
+				<< wave_data->Duration() << " sec): producing no output.";
+		return false;
+	}
+	int32 num_chan = wave_data->Data().NumRows(), this_chan = channel;
+	{  // This block works out the channel (0=left, 1=right...)
+		KALDI_ASSERT(num_chan > 0);  // should have been caught in
+		// reading code if no channels.
+		if (channel == -1) {
+			this_chan = 0;
+			if (num_chan != 1)
+				KALDI_WARN << "Channel not specified but you have data with "
+						<< num_chan << " channels; defaulting to zero";
+		} else {
+			if (this_chan >= num_chan) {
+				KALDI_WARN << "File with id " << utt << " has " << num_chan
+						<< " channels but you specified channel " << channel
+						<< ", producing no output.";
+				return false;
+			}
+		}
+	}
+
+	SubVector<BaseFloat> waveform(wave_data->Data(), this_chan);
+	mfcc.ComputeFeatures(waveform, wave_data->SampFreq(), 1.0, features);
 
 	return true;
-
 }
 
 void Nnet3XvectorInit(ParseOptions &po, NnetSimpleComputationOptions *opts,
@@ -214,13 +244,16 @@ int main(int argc, char *argv[]) {
 		Timer timer;
 
 		bool only_first_chunk = false;
-		int32 norm_factor_frames = 200;//200 frames = 1 second
+		int32 norm_factor_frames = 200;		//200 frames = 1 second
+		std::string use_gpu = "yes";
 
 		po.Register("only-first-chunk", &only_first_chunk,
 				"Reduce length to the first chunk.");
 
 		po.Register("norm-factor-frames", &norm_factor_frames,
-						"Round length to the frames.");
+				"Round length to the frames.");
+		po.Register("use-gpu", &use_gpu,
+				"yes|no, only has effect if compiled with CUDA");
 
 		//------------------------  MFCC options
 		MfccOptions mfcc_opts;
@@ -267,9 +300,10 @@ int main(int argc, char *argv[]) {
 				&min_chunk_size, &pad_input);
 
 		//-----------------------
-
-		RegisterCuAllocatorOptions(&po);
-		CuDevice::RegisterDeviceOptions(&po);
+#if HAVE_CUDA==1
+			RegisterCuAllocatorOptions(&po);
+			CuDevice::RegisterDeviceOptions(&po);
+#endif
 
 		po.Read(argc, argv);
 		if (po.NumArgs() != 3) {
@@ -277,8 +311,10 @@ int main(int argc, char *argv[]) {
 			exit(1);
 		}
 
-		CuDevice::Instantiate().SelectGpuId("yes");
-		CuDevice::Instantiate().AllowMultithreading();
+#if HAVE_CUDA==1
+			CuDevice::Instantiate().SelectGpuId(use_gpu);
+			CuDevice::Instantiate().AllowMultithreading();
+#endif
 
 		std::string nnet_rxfilename = po.GetArg(1);
 		std::string wav_rspecifier = po.GetArg(2);
@@ -303,7 +339,9 @@ int main(int argc, char *argv[]) {
 
 		//-----------------------
 
-		CudaSpectralFeatures mfcc(mfcc_opts);
+		Mfcc cpuMfcc(mfcc_opts); // <- May be more preferable way to implement MFCC on CPU.
+		//MfccComputer cpuMfcc (mfcc_opts);
+		CudaSpectralFeatures cudaMfcc(mfcc_opts);
 
 		SequentialTableReader<WaveHolder> reader(wav_rspecifier);
 		BaseFloatVectorWriter vector_writer(vector_wspecifier);
@@ -320,10 +358,18 @@ int main(int argc, char *argv[]) {
 			std::string utt = reader.Key();
 			WaveData &wave_data = reader.Value();
 
-			if (ComputeMFCC(&wave_data, min_duration, channel, mfcc, &features,
-					utt) == false) {
-				num_fail++;
-				continue;
+			if (use_gpu == "no") {
+				if (ComputeMfccCPU(&wave_data, min_duration, channel, cpuMfcc,
+						&features, utt) == false) {
+					num_fail++;
+					continue;
+				}
+			} else {
+				if (ComputeMfccCuda(&wave_data, min_duration, channel, cudaMfcc,
+						&features, utt) == false) {
+					num_fail++;
+					continue;
+				}
 			}
 
 			//VAD
@@ -361,8 +407,7 @@ int main(int argc, char *argv[]) {
 			if (chunk_size != -1 && voiced_features.NumRows() > chunk_size) {
 				if (only_first_chunk) {
 					balanced_rows = chunk_size;
-				}
-				else {
+				} else {
 					int32 blns = voiced_features.NumRows() % chunk_size;
 					balanced_rows = voiced_features.NumRows() - blns;
 				}
@@ -371,11 +416,8 @@ int main(int argc, char *argv[]) {
 				balanced_rows = voiced_features.NumRows() - blns;
 			}
 
-
-			SubMatrix<BaseFloat> norm_features(
-					voiced_features, 0, balanced_rows,
-					0, features.NumCols());
-
+			SubMatrix<BaseFloat> norm_features(voiced_features, 0,
+					balanced_rows, 0, features.NumCols());
 
 			//xvector compute
 			Vector<BaseFloat> xvector(xvector_dim, kSetZero);
