@@ -301,8 +301,8 @@ int main(int argc, char *argv[]) {
 
 		//-----------------------
 #if HAVE_CUDA==1
-			RegisterCuAllocatorOptions(&po);
-			CuDevice::RegisterDeviceOptions(&po);
+		RegisterCuAllocatorOptions(&po);
+		CuDevice::RegisterDeviceOptions(&po);
 #endif
 
 		po.Read(argc, argv);
@@ -312,8 +312,8 @@ int main(int argc, char *argv[]) {
 		}
 
 #if HAVE_CUDA==1
-			CuDevice::Instantiate().SelectGpuId(use_gpu);
-			CuDevice::Instantiate().AllowMultithreading();
+		CuDevice::Instantiate().SelectGpuId(use_gpu);
+		CuDevice::Instantiate().AllowMultithreading();
 #endif
 
 		std::string nnet_rxfilename = po.GetArg(1);
@@ -340,8 +340,13 @@ int main(int argc, char *argv[]) {
 		//-----------------------
 
 		Mfcc cpuMfcc(mfcc_opts); // <- May be more preferable way to implement MFCC on CPU.
-		//MfccComputer cpuMfcc (mfcc_opts);
-		CudaSpectralFeatures cudaMfcc(mfcc_opts);
+
+		CudaSpectralFeatures *cudaMfcc = nullptr;
+
+		if (use_gpu != "no") {
+			cudaMfcc = new CudaSpectralFeatures(mfcc_opts);
+		}
+
 
 		SequentialTableReader<WaveHolder> reader(wav_rspecifier);
 		BaseFloatVectorWriter vector_writer(vector_wspecifier);
@@ -365,11 +370,14 @@ int main(int argc, char *argv[]) {
 					continue;
 				}
 			} else {
-				if (ComputeMfccCuda(&wave_data, min_duration, channel, cudaMfcc,
+				KALDI_ASSERT(cudaMfcc != nullptr);
+
+				if (ComputeMfccCuda(&wave_data, min_duration, channel, *cudaMfcc,
 						&features, utt) == false) {
 					num_fail++;
 					continue;
 				}
+
 			}
 
 			//VAD
